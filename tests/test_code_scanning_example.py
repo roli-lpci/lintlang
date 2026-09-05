@@ -9,7 +9,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_PATH = REPO_ROOT / "examples" / "github-code-scanning.yml"
-LINTLANG_V050_SHA = "cad2dca3054b8bfb5d0a6b93ecf19f9d74ab64fe"
+LINTLANG_V053_SHA = "f89c3b0b8986fad162859dca052a8d5fe227eede"
 UPLOAD_ARTIFACT_V7_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 DOWNLOAD_ARTIFACT_V8_SHA = "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
 UPLOAD_SARIF_V4_SHA = "5595ccaf912efad79be6eef63a5619ff05969be3"
@@ -51,7 +51,7 @@ def test_code_scanning_example_is_least_privilege_and_uploads_even_after_failure
     download_step = next(step for step in upload["steps"] if step.get("name") == "Download LintLang SARIF")
     upload_step = next(step for step in upload["steps"] if step.get("name") == "Upload LintLang SARIF")
     assert checkout_step["with"]["persist-credentials"] is False
-    assert lintlang_step["uses"] == f"hermes-labs-ai/lintlang@{LINTLANG_V050_SHA}"
+    assert lintlang_step["uses"] == f"hermes-labs-ai/lintlang@{LINTLANG_V053_SHA}"
     assert lintlang_step["with"]["path"] == "AGENTS.md"
     assert lintlang_step["with"]["sarif-file"] == "lintlang.sarif"
     assert lintlang_step["with"]["fail-on"] == "fail"
@@ -64,7 +64,7 @@ def test_code_scanning_example_is_least_privilege_and_uploads_even_after_failure
     assert download_step["with"]["name"] == preserve_step["with"]["name"]
     assert upload_step["with"]["sarif_file"] == "lintlang.sarif"
     assert upload_step["uses"] == f"github/codeql-action/upload-sarif@{UPLOAD_SARIF_V4_SHA}"
-    assert f"lintlang@{LINTLANG_V050_SHA} # v0.5.0" in text
+    assert f"lintlang@{LINTLANG_V053_SHA} # v0.5.3" in text
     assert re.search(
         rf"github/codeql-action/upload-sarif@{UPLOAD_SARIF_V4_SHA}\s+# v4\b",
         text,
@@ -78,5 +78,5 @@ def test_readme_code_scanning_example_is_complete_and_matches_the_public_example
 
     assert match, "README Code Scanning section has no copy-paste YAML workflow"
     assert yaml.safe_load(match.group(1)) == yaml.safe_load(EXAMPLE_PATH.read_text(encoding="utf-8"))
-    assert f"lintlang@{LINTLANG_V050_SHA} # v0.5.0" in match.group(1)
+    assert f"lintlang@{LINTLANG_V053_SHA} # v0.5.3" in match.group(1)
     assert "pull_request_target" not in readme

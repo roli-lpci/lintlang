@@ -14,6 +14,10 @@ inputs:
     description: Verdict threshold that makes the action fail (fail or review).
     required: false
     default: fail
+  baseline:
+    description: Optional existing baseline file. Only unmatched findings affect the verdict; CI never creates a baseline.
+    required: false
+    default: ""
   python-version:
     description: Python version used to run LintLang.
     required: false
@@ -41,7 +45,13 @@ runs:
       env:
         LINTLANG_PATH: ${{ inputs.path }}
         LINTLANG_FAIL_ON: ${{ inputs.fail-on }}
-      run: lintlang scan "$LINTLANG_PATH" --fail-on "$LINTLANG_FAIL_ON"
+        LINTLANG_BASELINE: ${{ inputs.baseline }}
+      run: |
+        LINTLANG_ARGS=(scan "$LINTLANG_PATH" --fail-on "$LINTLANG_FAIL_ON")
+        if [ -n "$LINTLANG_BASELINE" ]; then
+          LINTLANG_ARGS+=(--baseline "$LINTLANG_BASELINE")
+        fi
+        lintlang "${LINTLANG_ARGS[@]}"
 
     - name: Scan agent instructions to SARIF
       if: inputs.sarif-file != ''
@@ -49,6 +59,7 @@ runs:
       env:
         LINTLANG_PATH: ${{ inputs.path }}
         LINTLANG_FAIL_ON: ${{ inputs.fail-on }}
+        LINTLANG_BASELINE: ${{ inputs.baseline }}
         LINTLANG_SARIF_FILE: ${{ inputs.sarif-file }}
       run: |
         LINTLANG_PATH_REAL="$(python -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$LINTLANG_PATH")"
@@ -56,6 +67,15 @@ runs:
         if [ "$LINTLANG_PATH_REAL" = "$LINTLANG_SARIF_REAL" ]; then
           echo "Error: inputs path and sarif-file must differ." >&2
           exit 1
+        fi
+        LINTLANG_ARGS=(scan "$LINTLANG_PATH" --format sarif --fail-on "$LINTLANG_FAIL_ON")
+        if [ -n "$LINTLANG_BASELINE" ]; then
+          LINTLANG_BASELINE_REAL="$(python -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$LINTLANG_BASELINE")"
+          if [ "$LINTLANG_BASELINE_REAL" = "$LINTLANG_SARIF_REAL" ]; then
+            echo "Error: inputs baseline and sarif-file must differ." >&2
+            exit 1
+          fi
+          LINTLANG_ARGS+=(--baseline "$LINTLANG_BASELINE")
         fi
         if [ -d "$LINTLANG_SARIF_FILE" ]; then
           echo "Error: sarif-file must name a file, not a directory." >&2
@@ -65,7 +85,7 @@ runs:
         LINTLANG_SARIF_TMP="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/lintlang-sarif.XXXXXX")"
         trap 'rm -f -- "$LINTLANG_SARIF_TMP"' EXIT
         LINTLANG_STATUS=0
-        lintlang scan "$LINTLANG_PATH" --format sarif --fail-on "$LINTLANG_FAIL_ON" > "$LINTLANG_SARIF_TMP" || LINTLANG_STATUS=$?
+        lintlang "${LINTLANG_ARGS[@]}" > "$LINTLANG_SARIF_TMP" || LINTLANG_STATUS=$?
         mv -- "$LINTLANG_SARIF_TMP" "$LINTLANG_SARIF_FILE"
         trap - EXIT
         exit "$LINTLANG_STATUS"

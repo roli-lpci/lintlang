@@ -4,6 +4,14 @@
 
 ### Added
 
+- Opt-in baselines for incremental adoption: `scan --write-baseline FILE`
+  records reviewed structural findings; `scan --baseline FILE` reports and
+  gates remaining findings. Exact repository-relative identities and occurrence
+  counts prevent file-wide or rule-wide suppression. Invalid inputs remain
+  fatal, and baseline creation refuses to overwrite existing paths.
+- Optional first-party GitHub Action `baseline` input for both terminal and
+  SARIF output, with protection against a SARIF report overwriting the baseline.
+  Reports disclose the acknowledged finding count; HERM scores are unchanged.
 - External MegaLinter plugin exposing the pinned LintLang scanner as
   `AI_LINTLANG`, with an exact configuration guide and clean/failing fixture
   coverage. Verified end to end in `oxsecurity/megalinter-python:v9.4.0`: the

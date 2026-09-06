@@ -116,6 +116,28 @@ lintlang scan AGENTS.md --fail-on fail
 Each finding identifies the affected location, the detected pattern, its
 severity, and a suggested review action.
 
+### Adopt LintLang in an existing repository
+
+An existing instruction backlog does not have to delay a CI gate. The
+[baseline workflow](docs/baselines.md) records reviewed findings and lets the
+same scanner report and gate findings that are not acknowledged. It works in
+the CLI and the first-party GitHub Action, without disabling an entire rule.
+
+This feature is **unreleased**; use a source checkout containing this change.
+From the root of the project you want to scan:
+
+```bash
+# Review the full report before committing the generated baseline.
+lintlang scan AGENTS.md --write-baseline .lintlang-baseline.json
+
+# Keep the known backlog acknowledged while blocking new MEDIUM+ findings.
+lintlang scan AGENTS.md --baseline .lintlang-baseline.json --fail-on review
+```
+
+Baseline matching is exact and count-limited. Changed findings and findings in
+another file remain visible. Invalid inputs still fail; HERM scores are
+unchanged. See the guide for CI configuration, maintenance, and matching limits.
+
 ## Try the bundled example
 
 The source repository includes a deliberately broken example:

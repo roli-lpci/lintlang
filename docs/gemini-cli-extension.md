@@ -14,16 +14,28 @@ the source bundled in the installed extension and asks uv for exactly
 ambient `lintlang` installation. The first scan may download that pinned wheel;
 later scans reuse uv's cache.
 
-From a checkout:
+From an already configured Gemini CLI, install the released 0.5.3 source:
+
+```bash
+gemini extensions install https://github.com/hermes-labs-ai/lintlang --ref=f89c3b0b8986fad162859dca052a8d5fe227eede
+gemini extensions list
+```
+
+Review the installation consent prompt. The source commit pins
+[v0.5.3](https://github.com/hermes-labs-ai/lintlang/releases/tag/v0.5.3).
+This command was verified with Gemini CLI 0.32.1; the extension list reports
+`lintlang (0.5.3)` as enabled, with `Type: git` and the source commit above.
+Restart an active Gemini CLI session to load the installed extension.
+
+Gemini CLI copies the extension, including `src/lintlang`, into its extension
+directory. No separate LintLang installation is required.
+
+For local development, install from a repository checkout instead:
 
 ```bash
 gemini extensions validate .
 gemini extensions install . --consent
 ```
-
-Once the root manifest is released, users can instead install the GitHub
-repository URL. Gemini CLI copies the extension, including `src/lintlang`, into
-its extension directory.
 
 ## Behavior
 

@@ -4,10 +4,18 @@ Baselines acknowledge a reviewed set of existing structural findings. They let
 a repository enable a gate while its maintainers work through that backlog.
 The default scanner behavior is unchanged until you pass `--baseline`.
 
-**Availability:** this feature is unreleased. Install a source checkout that
-contains it with `python -m pip install /path/to/lintlang`, preferably in a
-virtual environment. The published `lintlang==0.5.3` package and `v0.5.3` Action
-do not support these options.
+**Availability:** this feature is unreleased. After this change is merged,
+install the development source, preferably in a virtual environment:
+
+```bash
+python -m pip install 'git+https://github.com/hermes-labs-ai/lintlang.git@main'
+```
+
+For reproducible installation, replace `main` with the full reviewed commit
+SHA. You can also install an existing checkout with
+`python -m pip install /path/to/lintlang`. The published `lintlang==0.5.3`
+package and `v0.5.3` Action do not support these options; source installations
+may report that same version until the next release.
 
 ## Start from a reviewed scan
 
@@ -89,6 +97,9 @@ change the baseline can acknowledge findings.
   description, and evidence. Matching is exact; there are no wildcards or
   rule-wide exemptions. A changed location, message, or evidence can reopen a
   finding, including after a detector upgrade. Suggestions are not identity.
+  Python source-path prefixes are normalized to the repository-relative path,
+  so absolute versus relative invocation paths do not change the fingerprint;
+  actual line spans and prompt locations remain part of the identity.
 - Additional occurrences beyond the recorded count remain visible. Repeating
   the same file through multiple CLI paths does not enlarge its allowance.
 - HERM scores, quality thresholds, and source input errors are unchanged.

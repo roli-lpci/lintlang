@@ -84,11 +84,18 @@ def _source_path(source: str, root: Path) -> str:
     return relative
 
 
-def _fingerprint(finding: Finding) -> str:
+def _fingerprint(finding: Finding, source: str, relative_path: str) -> str:
+    location = finding.location
+    # Python detectors prefix locations with the invocation's source path.
+    # Normalize only that exact prefix; keep line spans and prompt locations
+    # intact so source changes still reopen findings across portable checkouts.
+    prefix = f"{source}:"
+    if Path(source).suffix.lower() == ".py" and location.startswith(prefix):
+        location = f"{relative_path}:{location[len(prefix):]}"
     identity = {
         "code": finding.code,
         "severity": finding.severity.value,
-        "location": finding.location,
+        "location": location,
         "description": finding.description,
         "evidence": finding.evidence,
     }
@@ -109,7 +116,7 @@ def create_baseline(results: dict[str, ScanResult], root: Path) -> dict:
     counts: dict[str, Counter[str]] = {}
     for result in results.values():
         path = _source_path(result.file, root)
-        findings = Counter(_fingerprint(finding) for finding in result.structural_findings)
+        findings = Counter(_fingerprint(finding, result.file, path) for finding in result.structural_findings)
         counts[path] = counts.get(path, Counter()) | findings
     return _validate({
         "schema": SCHEMA,
@@ -181,7 +188,7 @@ def apply_baseline(results: dict[str, ScanResult], payload: dict, root: Path) ->
         result = results[key]
         unmatched = []
         for finding in result.structural_findings:
-            identity = (paths[key], _fingerprint(finding))
+            identity = (paths[key], _fingerprint(finding, result.file, paths[key]))
             if remaining[identity] > 0:
                 remaining[identity] -= 1
                 suppressed[key] += 1

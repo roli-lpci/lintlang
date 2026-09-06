@@ -109,3 +109,32 @@ def test_repeated_cli_aliases_do_not_duplicate_output_or_allowance(project, caps
     assert status == 0
     assert len(data) == 1
     assert data[0]["baseline"]["suppressed"] == len(original["structural_findings"])
+
+
+@pytest.mark.parametrize(("python_source", "expected_codes"), [
+    ("CONFIDENCE_THRESHOLD = 0.75\n", {"P1"}),
+    (f"SYSTEM_PROMPT = {('You are an assistant. ' + 'Keep trying until it works. ' * 25)!r}\n", {"P2", "H2"}),
+], ids=["threshold", "embedded-prompt"])
+def test_python_baseline_survives_checkout_and_invocation_path_changes(
+    project, tmp_path_factory, monkeypatch, capsys, python_source, expected_codes,
+):
+    configs = project / "configs"
+    configs.mkdir()
+    source = configs / "pipeline.py"
+    source.write_text(python_source)
+    status, original, _ = scan(capsys, str(source), "--write-baseline", "python-baseline.json")
+    assert status == 0
+    assert expected_codes <= {finding["code"] for finding in original[0]["structural_findings"]}
+    copied = tmp_path_factory.mktemp("python-checkout")
+    shutil.copytree(project, copied, dirs_exist_ok=True)
+    monkeypatch.chdir(copied / "configs")
+    status, data, _ = scan(capsys, "pipeline.py", "--baseline", "../python-baseline.json", "--fail-on", "review")
+    assert status == 0
+    assert data[0]["structural_findings"] == []
+    assert data[0]["baseline"]["suppressed"] == len(original[0]["structural_findings"])
+
+    # Canonicalizing the path must not erase actual location changes.
+    (copied / "configs/pipeline.py").write_text("\n" + python_source)
+    status, data, _ = scan(capsys, "pipeline.py", "--baseline", "../python-baseline.json", "--fail-on", "review")
+    assert status == 1
+    assert expected_codes <= {finding["code"] for finding in data[0]["structural_findings"]}

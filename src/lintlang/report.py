@@ -108,6 +108,7 @@ def _severity_summary(findings: list[Finding]) -> str:
 def format_terminal(
     result: ScanResult,
     show_suggestions: bool = True,
+    baseline_count: int | None = None,
 ) -> str:
     """Format a ScanResult for terminal output with ANSI colors."""
     lines: list[str] = []
@@ -125,6 +126,8 @@ def format_terminal(
 
     # Verdict
     lines.append(f"  {icon} {BOLD}{vcolor}{verdict}{RESET} — {_severity_summary(findings)}")
+    if baseline_count is not None:
+        lines.append(f"  Baseline: {baseline_count} recorded finding(s) acknowledged; verdict covers remaining findings.")
     lines.append("")
 
     if result.input_error is not None:
@@ -178,6 +181,7 @@ def format_terminal(
 def format_markdown(
     result: ScanResult,
     show_suggestions: bool = True,
+    baseline_count: int | None = None,
 ) -> str:
     """Format a ScanResult as a Markdown document."""
     lines: list[str] = []
@@ -201,6 +205,8 @@ def format_markdown(
 
     # Verdict
     lines.append(f"**Verdict:** {verdict_md} — {_severity_summary(findings)}")
+    if baseline_count is not None:
+        lines.append(f"**Baseline:** {baseline_count} recorded finding(s) acknowledged; verdict covers remaining findings.")
     lines.append("")
 
     # Structural findings

@@ -80,6 +80,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Glob patterns to exclude (e.g., 'CHANGELOG.md' 'docs/**'). Non-prompt files (README, LICENSE, etc.) are skipped automatically.",
     )
+    baseline_group = scan_parser.add_mutually_exclusive_group()
+    baseline_group.add_argument(
+        "--baseline",
+        type=Path,
+        help="Acknowledge exact existing findings from a reviewed baseline; report new findings",
+    )
+    baseline_group.add_argument(
+        "--write-baseline",
+        type=Path,
+        help="Record current findings to a new baseline file without overwriting an existing file",
+    )
     # ── patterns command ───────────────────────────────────────────
     subparsers.add_parser("patterns", help="List all diagnostic patterns")
     configure_init_parser(subparsers)
@@ -125,6 +136,21 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     t_start = time.monotonic()
 
+    baseline_data = None
+    baseline_root = None
+    baseline_counts: dict[str, int] = {}
+    baseline_path = args.baseline or args.write_baseline
+    if baseline_path:
+        from .baseline import BaselineError, load_baseline
+        from .sarif import find_repository_root
+
+        baseline_root = find_repository_root(Path.cwd())
+        if args.baseline:
+            try:
+                baseline_data = load_baseline(args.baseline)
+            except (BaselineError, OSError) as error:
+                return _baseline_failure(args, str(error))
+
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
     min_sev = severity_order.get(args.min_severity, 4)
 
@@ -158,8 +184,42 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         except Exception as e:
             results[str(path)] = input_error_result(path, f"Failed to parse: {e}")
 
+    if baseline_path:
+        # Directory scans may discover the baseline JSON itself. It is an
+        # acknowledgement file, never another instruction input. Resolve aliases
+        # once so repeated CLI paths cannot enlarge a baseline's allowance.
+        unique_results: dict[str, ScanResult] = {}
+        seen: set[Path] = set()
+        try:
+            resolved_baseline = baseline_path.resolve()
+            for key, result in results.items():
+                # Keep input failures verbatim; even an unresolvable source
+                # must remain a fatal input rather than disappear in filtering.
+                if result.input_error is not None:
+                    unique_results[key] = result
+                    continue
+                source = Path(result.file).resolve()
+                if source == resolved_baseline or source in seen:
+                    continue
+                seen.add(source)
+                unique_results[key] = result
+        except (OSError, RuntimeError) as error:
+            return _baseline_failure(args, str(error))
+        results = unique_results
+
     input_errors = [result for result in results.values() if result.input_error is not None]
     sarif_output_errors: list[str] = []
+    pending_baseline = None
+    if baseline_path:
+        from .baseline import BaselineError, apply_baseline, create_baseline
+
+        try:
+            if args.baseline:
+                baseline_counts = apply_baseline(results, baseline_data, baseline_root)
+            elif results and not input_errors:
+                pending_baseline = create_baseline(results, baseline_root)
+        except (BaselineError, OSError) as error:
+            return _baseline_failure(args, str(error))
 
     if args.format != "sarif":
         for result in input_errors:
@@ -167,17 +227,23 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     # Output
     if args.format == "terminal":
-        for result in results.values():
-            print(format_terminal(result, show_suggestions=not args.no_suggestions))
+        for key, result in results.items():
+            print(format_terminal(
+                result, show_suggestions=not args.no_suggestions,
+                baseline_count=baseline_counts.get(key, 0) if args.baseline else None,
+            ))
     elif args.format == "markdown":
-        for result in results.values():
+        for key, result in results.items():
             if result.input_error:
                 print(f"# Lintlang Input Error\n\n- **File:** `{result.file}`\n- **Error:** {result.input_error}\n")
             else:
-                print(format_markdown(result, show_suggestions=not args.no_suggestions))
+                print(format_markdown(
+                    result, show_suggestions=not args.no_suggestions,
+                    baseline_count=baseline_counts.get(key, 0) if args.baseline else None,
+                ))
     elif args.format == "json":
         output = []
-        for result in results.values():
+        for key, result in results.items():
             verdict = compute_verdict(result)
             output.append(
                 {
@@ -213,6 +279,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
                     },
                 }
             )
+            if args.baseline:
+                output[-1]["baseline"] = {"suppressed": baseline_counts.get(key, 0)}
         print(json_mod.dumps(output, indent=2))
     elif args.format == "sarif":
         from .sarif import (
@@ -233,15 +301,20 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         for error in sarif_output_errors:
             print(f"Error: SARIF output error: {error}", file=sys.stderr)
         try:
-            print(
-                format_sarif(
-                    sarif_results,
-                    repository_root=repository_root,
-                    source_base=invocation_root,
-                    show_suggestions=not args.no_suggestions,
-                ),
-                end="",
+            document = format_sarif(
+                sarif_results,
+                repository_root=repository_root,
+                source_base=invocation_root,
+                show_suggestions=not args.no_suggestions,
             )
+            if args.baseline:
+                parsed = json_mod.loads(document)
+                parsed["runs"][0].setdefault("properties", {})["lintlangBaseline"] = {
+                    "suppressed": sum(baseline_counts.values()),
+                    "verdictScope": "remaining findings",
+                }
+                document = json_mod.dumps(parsed, indent=2) + "\n"
+            print(document, end="")
         except SarifLocationError as error:
             print(f"Error: SARIF output error: {error}", file=sys.stderr)
             print(format_sarif_error(str(error)), end="")
@@ -260,6 +333,17 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     # --fail-on. Never let another valid input mask a requested input error.
     if input_errors or sarif_output_errors:
         return 1
+
+    if pending_baseline is not None:
+        from .baseline import BaselineError, write_baseline
+
+        try:
+            write_baseline(args.write_baseline, pending_baseline)
+        except (BaselineError, OSError) as error:
+            print(f"Error: Baseline was not written: {error}", file=sys.stderr)
+            return 1
+        count = sum(entry["count"] for entry in pending_baseline["entries"])
+        print(f"Baseline written to {args.write_baseline}: {count} finding(s). Review before committing.", file=sys.stderr)
 
     # Verdict-based exit
     if args.fail_on:
@@ -280,6 +364,24 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             return 1
 
     return 0
+
+
+def _baseline_failure(args: argparse.Namespace, message: str) -> int:
+    """Keep an operational baseline error nonzero and machine-readable."""
+    import json
+
+    print(f"Error: Baseline: {message}", file=sys.stderr)
+    if args.format == "sarif":
+        from .sarif import format_sarif_error
+
+        print(format_sarif_error(f"Baseline error: {message}"), end="")
+    elif args.format == "json":
+        print(json.dumps([{
+            "file": str(args.baseline or args.write_baseline),
+            "verdict": "ERROR", "input_error": f"Baseline error: {message}",
+            "structural_findings": [], "herm": None,
+        }], indent=2))
+    return 1
 
 
 if __name__ == "__main__":
